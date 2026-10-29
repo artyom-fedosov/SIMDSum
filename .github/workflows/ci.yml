@@ -9,33 +9,24 @@ jobs:
   build-and-test:
     name: ${{ matrix.name }}
     runs-on: ubuntu-24.04
-    container: ${{ matrix.container }}
+    # `import std;` needs CMake 4.3, GCC >= 15 / Clang >= 18.1.2 and a working libstdc++.modules.json,
+    # which Ubuntu < 26.04 does not ship; Fedora provides all of it.
+    container: fedora:latest
     strategy:
       fail-fast: false
       matrix:
         include:
-          # Oldest supported compilers.
-          - { name: gcc-14 / Release, config: Release, cxx: g++-14, apt: g++-14 }
-          - { name: gcc-14 / Debug, config: Debug, cxx: g++-14, apt: g++-14 }
-          - { name: clang-18 / Release, config: Release, cxx: clang++-18, apt: clang-18 clang-tools-18 }
-          - { name: clang-18 / Sanitize, config: Sanitize, cxx: clang++-18, apt: clang-18 clang-tools-18 }
-          # Current compilers (GCC 14 hits an internal compiler error in module code with sanitizers).
-          - { name: fedora gcc / Release, config: Release, cxx: g++, container: "fedora:latest" }
-          - { name: fedora gcc / Sanitize, config: Sanitize, cxx: g++, container: "fedora:latest" }
-          - { name: fedora clang / Release, config: Release, cxx: clang++, container: "fedora:latest" }
+          - { name: gcc / Release, config: Release, cxx: g++ }
+          - { name: gcc / Debug, config: Debug, cxx: g++ }
+          - { name: gcc / Sanitize, config: Sanitize, cxx: g++ }
+          - { name: clang / Release, config: Release, cxx: clang++ }
+          - { name: clang / Sanitize, config: Sanitize, cxx: clang++ }
 
     steps:
-      - name: Install toolchain (Fedora)
-        if: matrix.container
+      - name: Install toolchain
         run: |
           dnf install -y --setopt=install_weak_deps=False git cmake ninja-build gcc-c++ clang clang-tools-extra \
             libasan libubsan compiler-rt
-
-      - name: Install toolchain (Ubuntu)
-        if: ${{ !matrix.container }}
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ninja-build ${{ matrix.apt }}
 
       - uses: actions/checkout@v4
 
@@ -54,7 +45,7 @@ jobs:
             Debug)    extra="-DCMAKE_BUILD_TYPE=Debug" ;;
             *)        extra="-DCMAKE_BUILD_TYPE=Release -DSIMDSUM_BUILD_BENCHMARKS=ON" ;;
           esac
-          cmake -G Ninja -S . -B build $extra
+          cmake -G Ninja -Wno-dev -S . -B build $extra
 
       - name: Build
         run: cmake --build build
@@ -70,9 +61,10 @@ jobs:
           cmake --install build --prefix "$RUNNER_TEMP/prefix"
           mkdir -p "$RUNNER_TEMP/consumer"
           cat > "$RUNNER_TEMP/consumer/CMakeLists.txt" <<'EOF'
-          cmake_minimum_required(VERSION 3.28)
+          cmake_minimum_required(VERSION 4.3)
+          set(CMAKE_EXPERIMENTAL_CXX_IMPORT_STD "451f2fe2-a8a2-47c3-bc32-94786d8fc91b")
           project(consumer CXX)
-          set(CMAKE_CXX_STANDARD 20)
+          set(CMAKE_CXX_STANDARD 23)
           set(CMAKE_CXX_EXTENSIONS OFF)
           find_package(simdsum REQUIRED)
           add_executable(consumer main.cpp)
@@ -92,7 +84,7 @@ jobs:
               return (r == std::vector<int>{11, 22, 33}) ? 0 : 1;
           }
           EOF
-          cmake -G Ninja -S "$RUNNER_TEMP/consumer" -B "$RUNNER_TEMP/consumer/build" -DCMAKE_PREFIX_PATH="$RUNNER_TEMP/prefix"
+          cmake -G Ninja -Wno-dev -S "$RUNNER_TEMP/consumer" -B "$RUNNER_TEMP/consumer/build" -DCMAKE_PREFIX_PATH="$RUNNER_TEMP/prefix"
           cmake --build "$RUNNER_TEMP/consumer/build"
           LD_LIBRARY_PATH="$RUNNER_TEMP/prefix/lib:$RUNNER_TEMP/prefix/lib64" "$RUNNER_TEMP/consumer/build/consumer"
 

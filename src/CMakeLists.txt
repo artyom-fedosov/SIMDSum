@@ -31,13 +31,14 @@ generate_export_header(simdsum
     EXPORT_FILE_NAME ${CMAKE_CURRENT_BINARY_DIR}/simdsum_export.h)
 
 target_include_directories(simdsum PRIVATE ${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR})
-target_compile_features(simdsum PUBLIC cxx_std_20)
+target_compile_features(simdsum PUBLIC cxx_std_23)
 target_link_libraries(simdsum PRIVATE $<BUILD_INTERFACE:simdsum_options>)
 target_compile_definitions(simdsum PRIVATE SIMDSUM_VERSION_STRING="${PROJECT_VERSION}")
 
 set_target_properties(simdsum PROPERTIES
     VERSION ${PROJECT_VERSION}
     SOVERSION ${PROJECT_VERSION_MAJOR}
+    CXX_MODULE_STD ON
     CXX_VISIBILITY_PRESET hidden
     VISIBILITY_INLINES_HIDDEN ON)
 

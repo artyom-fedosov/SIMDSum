@@ -1,21 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 module;
 
-#include <algorithm>
-#include <complex>
-#include <concepts>
-#include <cstddef>
-#include <cstdint>
-#include <ranges>
-#include <span>
-#include <stdexcept>
-#include <string_view>
-#include <type_traits>
-#include <vector>
-
+// Macros can't be imported, so the export macro header stays in the global module fragment.
 #include "simdsum_export.h"
 
 export module simdsum;
+
+import std;
 
 export namespace simdsum {
 

@@ -1,8 +1,8 @@
 # SIMDSum
 
-Fast element-wise addition of two arrays — `out[i] = a[i] + b[i]` — as a C++20 **shared library**
+Fast element-wise addition of two arrays — `out[i] = a[i] + b[i]` — as a C++23 **shared library**
 with hand-written SIMD kernels (compiler intrinsics) and runtime CPU dispatch, consumed as a
-**C++20 module** (`import simdsum;`).
+**C++ module** (`import simdsum;`). The library itself uses `import std;` — no standard headers.
 
 - Works for **any summable `T`** (`a + b` convertible to `T`): integers, floats, `std::complex`,
   `std::string`, `std::chrono` durations, your own types…
@@ -45,20 +45,27 @@ simdsum::force_isa(simdsum::Isa::SSE2);   // false if the CPU can't run it
 ### From CMake
 
 ```cmake
+cmake_minimum_required(VERSION 4.3)
+# simdsum's module imports std, so its BMI needs CMake's (still experimental) `import std` support.
+set(CMAKE_EXPERIMENTAL_CXX_IMPORT_STD "451f2fe2-a8a2-47c3-bc32-94786d8fc91b")   # value for CMake 4.3
+project(app CXX)
+set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
 find_package(simdsum REQUIRED)
 target_link_libraries(app PRIVATE simdsum::simdsum)
 ```
 
 The installed package ships the module interface; CMake builds its BMI for your compiler.
-Module support requires CMake ≥ 3.28 and the Ninja generator. The BMI is built as strict ISO C++, so
-consumers need `set(CMAKE_CXX_EXTENSIONS OFF)` (Clang refuses to mix `-std=c++20` and `-std=gnu++20` BMIs).
+This needs the Ninja generator. The BMI is built as strict ISO C++, so consumers need
+`set(CMAKE_CXX_EXTENSIONS OFF)` (Clang refuses to mix `-std=c++23` and `-std=gnu++23` BMIs).
 
 ## Building
 
-Requirements: CMake ≥ 3.28, Ninja, and a compiler with C++20 module support (GCC ≥ 14 or Clang ≥ 18 with
-`clang-scan-deps`). GoogleTest and Google Benchmark are fetched automatically.
-GCC 14 crashes (internal compiler error in its module code) on sanitizer builds; use GCC ≥ 15 or Clang for
-`SIMDSUM_SANITIZE=ON`.
+Requirements: CMake 4.3 (the `import std` experimental gate value is release-specific), Ninja, and a C++23
+compiler with a standard library module: GCC ≥ 15, or Clang ≥ 18.1.2 with `clang-scan-deps`. Ubuntu releases
+before 26.04 ship a broken `libstdc++.modules.json`; CI uses a Fedora container.
+GoogleTest and Google Benchmark are fetched automatically.
 
 ```bash
 cmake -G Ninja -S . -B build -DCMAKE_BUILD_TYPE=Release
@@ -100,7 +107,7 @@ For DRAM-sized arrays the kernels are memory-bound; the gain there comes from st
 ## Design
 
 ```
-src/simdsum.cppm      module interface: concepts, add() templates, type → kernel routing, C ABI declarations
+src/simdsum.cppm      module interface (import std): concepts, add() templates, type → kernel routing, C ABI declarations
 src/dispatch.cpp      module implementation: CPUID detection, kernel tables, exported C entry points
 src/kernel_loop.inc   shared loop skeleton (×4 unrolled, streaming-store path, tail handling)
 src/kernels_*.cpp     one TU per instruction set, compiled with its own -m flags
@@ -110,8 +117,8 @@ src/kernels_*.cpp     one TU per instruction set, compiled with its own -m flags
   `std::complex<F>` is added as `2n` values of `F`.
 - The `.so` exports only a small C ABI (`simdsum_add_u8 … simdsum_add_f64`) plus the ISA control functions;
   all per-ISA kernels have hidden visibility.
-- The kernel TUs are deliberately not module units: a BMI must be imported with the target flags it was built
-  with, and keeping AVX code in internal-linkage functions in separate TUs guarantees no AVX instruction can
+- The kernel TUs are deliberately not module units and use plain `<cstdint>`/`<immintrin.h>` includes: a BMI
+  (including `std`) must be imported with the target flags it was built with, and keeping AVX code in internal-linkage functions in separate TUs guarantees no AVX instruction can
   leak into code that runs on older CPUs.
 - AVX-512 handles the tail with one masked load/add/store; SSE2/AVX2 use a short scalar tail.
 

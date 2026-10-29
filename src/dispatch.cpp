@@ -1,12 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Runtime instruction-set dispatch: picks the best kernel set once at load time (CPUID).
-module;
-
-#include <atomic>
-#include <cstddef>
-#include <string_view>
-
 module simdsum;
+
+import std;
 
 using kernel_fn = void (*)(const void*, const void*, void*, std::size_t) noexcept;
 
