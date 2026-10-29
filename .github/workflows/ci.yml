@@ -7,40 +7,53 @@ on:
 
 jobs:
   build-and-test:
-    name: ${{ matrix.compiler }} / ${{ matrix.config }}
+    name: ${{ matrix.name }}
     runs-on: ubuntu-24.04
+    container: ${{ matrix.container }}
     strategy:
       fail-fast: false
       matrix:
-        compiler: [gcc, clang]
-        config: [Release, Sanitize]
         include:
-          - compiler: gcc
-            cxx: g++-14
-            packages: g++-14
-          - compiler: clang
-            cxx: clang++-18
-            packages: clang-18 clang-tools-18
+          # Oldest supported compilers.
+          - { name: gcc-14 / Release, config: Release, cxx: g++-14, apt: g++-14 }
+          - { name: gcc-14 / Debug, config: Debug, cxx: g++-14, apt: g++-14 }
+          - { name: clang-18 / Release, config: Release, cxx: clang++-18, apt: clang-18 clang-tools-18 }
+          - { name: clang-18 / Sanitize, config: Sanitize, cxx: clang++-18, apt: clang-18 clang-tools-18 }
+          # Current compilers (GCC 14 hits an internal compiler error in module code with sanitizers).
+          - { name: fedora gcc / Release, config: Release, cxx: g++, container: "fedora:latest" }
+          - { name: fedora gcc / Sanitize, config: Sanitize, cxx: g++, container: "fedora:latest" }
+          - { name: fedora clang / Release, config: Release, cxx: clang++, container: "fedora:latest" }
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Install toolchain (Fedora)
+        if: matrix.container
+        run: |
+          dnf install -y --setopt=install_weak_deps=False git cmake ninja-build gcc-c++ clang clang-tools-extra \
+            libasan libubsan compiler-rt
 
-      - name: Install toolchain
+      - name: Install toolchain (Ubuntu)
+        if: ${{ !matrix.container }}
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build ${{ matrix.packages }}
+          sudo apt-get install -y ninja-build ${{ matrix.apt }}
+
+      - uses: actions/checkout@v4
+
+      - name: Show environment
+        run: |
           cmake --version
+          ${{ matrix.cxx }} --version
           grep -o -w -E 'sse2|avx2|avx512f|avx512bw' /proc/cpuinfo | sort -u
 
       - name: Configure
         env:
           CXX: ${{ matrix.cxx }}
         run: |
-          if [ "${{ matrix.config }}" = "Sanitize" ]; then
-            extra="-DCMAKE_BUILD_TYPE=Debug -DSIMDSUM_SANITIZE=ON"
-          else
-            extra="-DCMAKE_BUILD_TYPE=Release -DSIMDSUM_BUILD_BENCHMARKS=ON"
-          fi
+          case "${{ matrix.config }}" in
+            Sanitize) extra="-DCMAKE_BUILD_TYPE=Debug -DSIMDSUM_SANITIZE=ON" ;;
+            Debug)    extra="-DCMAKE_BUILD_TYPE=Debug" ;;
+            *)        extra="-DCMAKE_BUILD_TYPE=Release -DSIMDSUM_BUILD_BENCHMARKS=ON" ;;
+          esac
           cmake -G Ninja -S . -B build $extra
 
       - name: Build
@@ -60,6 +73,7 @@ jobs:
           cmake_minimum_required(VERSION 3.28)
           project(consumer CXX)
           set(CMAKE_CXX_STANDARD 20)
+          set(CMAKE_CXX_EXTENSIONS OFF)
           find_package(simdsum REQUIRED)
           add_executable(consumer main.cpp)
           target_link_libraries(consumer PRIVATE simdsum::simdsum)
@@ -80,7 +94,7 @@ jobs:
           EOF
           cmake -G Ninja -S "$RUNNER_TEMP/consumer" -B "$RUNNER_TEMP/consumer/build" -DCMAKE_PREFIX_PATH="$RUNNER_TEMP/prefix"
           cmake --build "$RUNNER_TEMP/consumer/build"
-          LD_LIBRARY_PATH="$RUNNER_TEMP/prefix/lib" "$RUNNER_TEMP/consumer/build/consumer"
+          LD_LIBRARY_PATH="$RUNNER_TEMP/prefix/lib:$RUNNER_TEMP/prefix/lib64" "$RUNNER_TEMP/consumer/build/consumer"
 
       - name: Benchmark smoke run
         if: matrix.config == 'Release'

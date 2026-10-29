@@ -50,12 +50,15 @@ target_link_libraries(app PRIVATE simdsum::simdsum)
 ```
 
 The installed package ships the module interface; CMake builds its BMI for your compiler.
-Module support requires CMake ≥ 3.28 and the Ninja generator.
+Module support requires CMake ≥ 3.28 and the Ninja generator. The BMI is built as strict ISO C++, so
+consumers need `set(CMAKE_CXX_EXTENSIONS OFF)` (Clang refuses to mix `-std=c++20` and `-std=gnu++20` BMIs).
 
 ## Building
 
 Requirements: CMake ≥ 3.28, Ninja, and a compiler with C++20 module support (GCC ≥ 14 or Clang ≥ 18 with
 `clang-scan-deps`). GoogleTest and Google Benchmark are fetched automatically.
+GCC 14 crashes (internal compiler error in its module code) on sanitizer builds; use GCC ≥ 15 or Clang for
+`SIMDSUM_SANITIZE=ON`.
 
 ```bash
 cmake -G Ninja -S . -B build -DCMAKE_BUILD_TYPE=Release
