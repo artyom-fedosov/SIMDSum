@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+include(FetchContent)
+
+FetchContent_Declare(googletest
+    URL https://github.com/google/googletest/archive/refs/tags/v1.17.0.tar.gz
+    DOWNLOAD_EXTRACT_TIMESTAMP ON
+    EXCLUDE_FROM_ALL)
+set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(googletest)
+
+add_executable(simdsum_tests
+    test_library.cpp)
+
+target_link_libraries(simdsum_tests PRIVATE simdsum::simdsum simdsum_options GTest::gtest_main)
+
+include(GoogleTest)
+gtest_discover_tests(simdsum_tests DISCOVERY_TIMEOUT 60)
