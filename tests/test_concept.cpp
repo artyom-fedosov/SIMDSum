@@ -18,7 +18,7 @@ namespace {
 struct Vec2 {
     double x{};
     double y{};
-    friend Vec2 operator+(const Vec2& l, const Vec2& r) { return {l.x + r.x, l.y + r.y}; }
+    [[maybe_unused]] friend Vec2 operator+(const Vec2& l, const Vec2& r) { return {l.x + r.x, l.y + r.y}; }
 };
 
 struct NotAddable {

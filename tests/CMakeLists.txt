@@ -11,9 +11,11 @@ FetchContent_MakeAvailable(googletest)
 add_executable(simdsum_tests
     test_library.cpp
     test_concept.cpp
-    test_add.cpp)
+    test_add.cpp
+    test_kernels.cpp
+    test_dispatch.cpp)
 
 target_link_libraries(simdsum_tests PRIVATE simdsum::simdsum simdsum_options GTest::gtest_main)
 
 include(GoogleTest)
-gtest_discover_tests(simdsum_tests DISCOVERY_TIMEOUT 60)
+gtest_discover_tests(simdsum_tests DISCOVERY_TIMEOUT 60 NO_PRETTY_VALUES)

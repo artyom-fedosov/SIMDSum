@@ -26,7 +26,9 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Common warning / sanitizer settings for every target we own.
 add_library(simdsum_options INTERFACE)
-target_compile_options(simdsum_options INTERFACE -Wall -Wextra -Wpedantic -Werror)
+target_compile_options(simdsum_options INTERFACE -Wall -Wextra -Wpedantic -Werror
+    # CMake passes -c alongside --precompile when Clang builds module BMIs.
+    $<$<CXX_COMPILER_ID:Clang>:-Wno-unused-command-line-argument>)
 if(SIMDSUM_SANITIZE)
     target_compile_options(simdsum_options INTERFACE
         -fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer)

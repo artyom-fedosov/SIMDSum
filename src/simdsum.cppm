@@ -2,8 +2,10 @@
 module;
 
 #include <algorithm>
+#include <complex>
 #include <concepts>
 #include <cstddef>
+#include <cstdint>
 #include <ranges>
 #include <span>
 #include <stdexcept>
@@ -20,6 +22,34 @@ export namespace simdsum {
 /// Library version, "MAJOR.MINOR.PATCH".
 SIMDSUM_API std::string_view version() noexcept;
 
+/// Instruction sets the library has kernels for, from slowest to fastest.
+enum class Isa : std::uint8_t { Scalar, SSE2, AVX2, AVX512 };
+
+constexpr std::string_view to_string(Isa isa) noexcept
+{
+    switch (isa) {
+    case Isa::Scalar:
+        return "Scalar";
+    case Isa::SSE2:
+        return "SSE2";
+    case Isa::AVX2:
+        return "AVX2";
+    case Isa::AVX512:
+        return "AVX512";
+    }
+    return "Unknown";
+}
+
+/// Whether this CPU (and OS) can run the kernels for `isa`.
+SIMDSUM_API bool isa_supported(Isa isa) noexcept;
+
+/// The instruction set currently used by add(). Defaults to the best supported one.
+SIMDSUM_API Isa active_isa() noexcept;
+
+/// Switches all subsequent add() calls to `isa` (intended for tests and benchmarks).
+/// Returns false, leaving the active set unchanged, if the CPU does not support it.
+SIMDSUM_API bool force_isa(Isa isa) noexcept;
+
 /// A type whose values can be added and the result stored back into a T.
 template <class T>
 concept Summable = std::assignable_from<T&, T> && requires(const T& x, const T& y) {
@@ -33,7 +63,79 @@ concept SummableRange = std::ranges::contiguous_range<R> && std::ranges::sized_r
 
 } // namespace simdsum
 
+// C ABI of the shared library: each call dispatches to the active instruction set.
+// `out` may equal `a` and/or `b`; partial overlap is not supported.
+extern "C" {
+SIMDSUM_API void simdsum_add_u8(const void* a, const void* b, void* out, std::size_t n) noexcept;
+SIMDSUM_API void simdsum_add_u16(const void* a, const void* b, void* out, std::size_t n) noexcept;
+SIMDSUM_API void simdsum_add_u32(const void* a, const void* b, void* out, std::size_t n) noexcept;
+SIMDSUM_API void simdsum_add_u64(const void* a, const void* b, void* out, std::size_t n) noexcept;
+SIMDSUM_API void simdsum_add_f32(const void* a, const void* b, void* out, std::size_t n) noexcept;
+SIMDSUM_API void simdsum_add_f64(const void* a, const void* b, void* out, std::size_t n) noexcept;
+}
+
 namespace simdsum::detail {
+
+template <class T>
+inline constexpr bool is_complex_v = false;
+template <class F>
+inline constexpr bool is_complex_v<std::complex<F>> = true;
+
+// Which library kernel handles T, if any.
+// Signed and unsigned two's-complement addition are bit-identical, so integers go by size only.
+// bool is excluded: true + true must stay true, not become the byte 0x02.
+enum class Kernel : std::uint8_t { None, U8, U16, U32, U64, F32, F64 };
+
+template <class T>
+consteval Kernel kernel_for() noexcept
+{
+    if constexpr (std::is_integral_v<T> && !std::is_same_v<T, bool>) {
+        switch (sizeof(T)) {
+        case 1:
+            return Kernel::U8;
+        case 2:
+            return Kernel::U16;
+        case 4:
+            return Kernel::U32;
+        case 8:
+            return Kernel::U64;
+        default:
+            return Kernel::None;
+        }
+    } else if constexpr (std::is_same_v<T, float>) {
+        return Kernel::F32;
+    } else if constexpr (std::is_same_v<T, double>) {
+        return Kernel::F64;
+    } else if constexpr (is_complex_v<T>) {
+        // std::complex<F> is guaranteed to be laid out as F[2].
+        return kernel_for<typename T::value_type>();
+    } else {
+        return Kernel::None;
+    }
+}
+
+template <Kernel K>
+void call_kernel(const void* a, const void* b, void* out, std::size_t n) noexcept
+{
+    if constexpr (K == Kernel::U8) {
+        simdsum_add_u8(a, b, out, n);
+    } else if constexpr (K == Kernel::U16) {
+        simdsum_add_u16(a, b, out, n);
+    } else if constexpr (K == Kernel::U32) {
+        simdsum_add_u32(a, b, out, n);
+    } else if constexpr (K == Kernel::U64) {
+        simdsum_add_u64(a, b, out, n);
+    } else if constexpr (K == Kernel::F32) {
+        simdsum_add_f32(a, b, out, n);
+    } else {
+        static_assert(K == Kernel::F64);
+        simdsum_add_f64(a, b, out, n);
+    }
+}
+
+// Number of kernel elements per T (2 for std::complex).
+template <class T>
+inline constexpr std::size_t lanes_per_element = is_complex_v<T> ? 2 : 1;
 
 template <class R>
 using element_t = std::remove_cv_t<std::ranges::range_value_t<R>>;
@@ -50,7 +152,11 @@ void add_span(std::span<const T> a, std::span<const T> b, std::span<T> out)
     if (a.size() != b.size() || a.size() != out.size()) {
         throw std::invalid_argument("simdsum::add: input and output sizes must match");
     }
-    add_generic(a, b, out);
+    if constexpr (constexpr Kernel kernel = kernel_for<T>(); kernel != Kernel::None) {
+        call_kernel<kernel>(a.data(), b.data(), out.data(), a.size() * lanes_per_element<T>);
+    } else {
+        add_generic(a, b, out);
+    }
 }
 
 } // namespace simdsum::detail

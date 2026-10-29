@@ -12,7 +12,18 @@ target_sources(simdsum
         BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}
         FILES simdsum.cppm
     PRIVATE
-        dispatch.cpp)
+        dispatch.cpp
+        kernels_scalar.cpp)
+
+# One translation unit per instruction set, each compiled with its own target flags (see kernel_loop.inc).
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64|i[3-6]86)$")
+    target_sources(simdsum PRIVATE kernels_sse2.cpp kernels_avx2.cpp kernels_avx512.cpp)
+    set_source_files_properties(kernels_sse2.cpp PROPERTIES COMPILE_OPTIONS "-msse2")
+    set_source_files_properties(kernels_avx2.cpp PROPERTIES COMPILE_OPTIONS "-mavx2")
+    set_source_files_properties(kernels_avx512.cpp PROPERTIES COMPILE_OPTIONS "-mavx512f;-mavx512bw")
+endif()
+set_source_files_properties(kernels_scalar.cpp kernels_sse2.cpp kernels_avx2.cpp kernels_avx512.cpp
+    PROPERTIES CXX_SCAN_FOR_MODULES OFF)
 
 generate_export_header(simdsum
     BASE_NAME SIMDSUM
