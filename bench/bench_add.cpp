@@ -62,7 +62,7 @@ void BM_Simdsum(benchmark::State& state, simdsum::Isa isa)
 template <class T>
 void register_type(const std::string& type)
 {
-    auto sizes = [](benchmark::internal::Benchmark* b) {
+    auto sizes = [](benchmark::Benchmark* b) {
         b->Arg(1 << 10)->Arg(1 << 16)->Arg(1 << 20)->Arg(1 << 22)->Arg(1 << 24);
     };
     sizes(benchmark::RegisterBenchmark("PlainLoop<" + type + ">", BM_PlainLoop<T>));

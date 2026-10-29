@@ -2,11 +2,13 @@
 include(FetchContent)
 
 FetchContent_Declare(benchmark
-    URL https://github.com/google/benchmark/archive/refs/tags/v1.9.1.tar.gz
+    URL https://github.com/google/benchmark/archive/refs/tags/v1.9.5.tar.gz
     DOWNLOAD_EXTRACT_TIMESTAMP ON
-    EXCLUDE_FROM_ALL)
+    EXCLUDE_FROM_ALL
+    SYSTEM)
 set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
 set(BENCHMARK_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
+set(BENCHMARK_ENABLE_WERROR OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(benchmark)
 
 add_executable(simdsum_bench bench_add.cpp)
