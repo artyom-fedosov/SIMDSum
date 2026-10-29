@@ -1,0 +1,87 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-and-test:
+    name: ${{ matrix.compiler }} / ${{ matrix.config }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+        config: [Release, Sanitize]
+        include:
+          - compiler: gcc
+            cxx: g++-14
+            packages: g++-14
+          - compiler: clang
+            cxx: clang++-18
+            packages: clang-18 clang-tools-18
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build ${{ matrix.packages }}
+          cmake --version
+          grep -o -w -E 'sse2|avx2|avx512f|avx512bw' /proc/cpuinfo | sort -u
+
+      - name: Configure
+        env:
+          CXX: ${{ matrix.cxx }}
+        run: |
+          if [ "${{ matrix.config }}" = "Sanitize" ]; then
+            extra="-DCMAKE_BUILD_TYPE=Debug -DSIMDSUM_SANITIZE=ON"
+          else
+            extra="-DCMAKE_BUILD_TYPE=Release -DSIMDSUM_BUILD_BENCHMARKS=ON"
+          fi
+          cmake -G Ninja -S . -B build $extra
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Install and build an external consumer
+        if: matrix.config == 'Release'
+        env:
+          CXX: ${{ matrix.cxx }}
+        run: |
+          cmake --install build --prefix "$RUNNER_TEMP/prefix"
+          mkdir -p "$RUNNER_TEMP/consumer"
+          cat > "$RUNNER_TEMP/consumer/CMakeLists.txt" <<'EOF'
+          cmake_minimum_required(VERSION 3.28)
+          project(consumer CXX)
+          set(CMAKE_CXX_STANDARD 20)
+          find_package(simdsum REQUIRED)
+          add_executable(consumer main.cpp)
+          target_link_libraries(consumer PRIVATE simdsum::simdsum)
+          EOF
+          cat > "$RUNNER_TEMP/consumer/main.cpp" <<'EOF'
+          #include <cstdio>
+          #include <vector>
+          import simdsum;
+          int main()
+          {
+              const std::vector<int> a{1, 2, 3};
+              const std::vector<int> b{10, 20, 30};
+              const auto r = simdsum::add(a, b);
+              std::printf("%.*s\n", static_cast<int>(simdsum::to_string(simdsum::active_isa()).size()),
+                          simdsum::to_string(simdsum::active_isa()).data());
+              return (r == std::vector<int>{11, 22, 33}) ? 0 : 1;
+          }
+          EOF
+          cmake -G Ninja -S "$RUNNER_TEMP/consumer" -B "$RUNNER_TEMP/consumer/build" -DCMAKE_PREFIX_PATH="$RUNNER_TEMP/prefix"
+          cmake --build "$RUNNER_TEMP/consumer/build"
+          LD_LIBRARY_PATH="$RUNNER_TEMP/prefix/lib" "$RUNNER_TEMP/consumer/build/consumer"
+
+      - name: Benchmark smoke run
+        if: matrix.config == 'Release'
+        run: ./build/bench/simdsum_bench --benchmark_min_time=0.05s --benchmark_filter='/1024$'
