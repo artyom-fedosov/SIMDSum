@@ -9,7 +9,9 @@ set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 
 add_executable(simdsum_tests
-    test_library.cpp)
+    test_library.cpp
+    test_concept.cpp
+    test_add.cpp)
 
 target_link_libraries(simdsum_tests PRIVATE simdsum::simdsum simdsum_options GTest::gtest_main)
 
