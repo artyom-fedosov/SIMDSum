@@ -26,18 +26,33 @@ inline void scalar_loop(const unsigned char* a, const unsigned char* b, unsigned
     }
 }
 
-// Ops provides: elem, lanes, reg, load(p), store(p, v), add(x, y), tail(a, b, out, n) for n < lanes.
+// Output size from which streaming (non-temporal) stores pay off: the result no longer fits in a typical
+// last-level cache, so writing around the cache saves the read-for-ownership of every output line.
+inline constexpr std::size_t streaming_threshold_bytes = std::size_t{4} << 20;
+
+template <class Ops>
+concept HasStreamingStore = requires(unsigned char* p, decltype(Ops::load(p)) v) {
+    Ops::stream(p, v);
+    Ops::fence();
+};
+
+// Ops provides: elem, lanes, load(p), store(p, v), add(x, y), tail(a, b, out, n) for n < lanes,
+// and optionally stream(p, v) (aligned non-temporal store) + fence().
 //
 // Every store only overwrites bytes that the same step has already loaded, so out == a and/or out == b
 // (in-place add) is safe. Partial overlap is not supported.
-template <class Ops>
-inline void simd_loop(const void* va, const void* vb, void* vout, std::size_t n) noexcept
+template <class Ops, bool Stream>
+inline void vector_loop(const unsigned char* a, const unsigned char* b, unsigned char* out, std::size_t n) noexcept
 {
     constexpr std::size_t lanes = Ops::lanes;
     constexpr std::size_t step = sizeof(typename Ops::elem) * lanes; // bytes per vector
-    const auto* a = static_cast<const unsigned char*>(va);
-    const auto* b = static_cast<const unsigned char*>(vb);
-    auto* out = static_cast<unsigned char*>(vout);
+    const auto put = [](unsigned char* p, auto v) {
+        if constexpr (Stream) {
+            Ops::stream(p, v);
+        } else {
+            Ops::store(p, v);
+        }
+    };
 
     // Four independent load/add/store chains per iteration keep both load ports busy.
     std::size_t i = 0;
@@ -50,23 +65,49 @@ inline void simd_loop(const void* va, const void* vb, void* vout, std::size_t n)
         const auto b1 = Ops::load(b + 1 * step);
         const auto b2 = Ops::load(b + 2 * step);
         const auto b3 = Ops::load(b + 3 * step);
-        Ops::store(out + 0 * step, Ops::add(a0, b0));
-        Ops::store(out + 1 * step, Ops::add(a1, b1));
-        Ops::store(out + 2 * step, Ops::add(a2, b2));
-        Ops::store(out + 3 * step, Ops::add(a3, b3));
+        put(out + 0 * step, Ops::add(a0, b0));
+        put(out + 1 * step, Ops::add(a1, b1));
+        put(out + 2 * step, Ops::add(a2, b2));
+        put(out + 3 * step, Ops::add(a3, b3));
         a += 4 * step;
         b += 4 * step;
         out += 4 * step;
     }
     for (; i + lanes <= n; i += lanes) {
-        Ops::store(out, Ops::add(Ops::load(a), Ops::load(b)));
+        put(out, Ops::add(Ops::load(a), Ops::load(b)));
         a += step;
         b += step;
         out += step;
     }
+    if constexpr (Stream) {
+        Ops::fence(); // order the weakly-ordered streaming stores before anything that follows
+    }
     if (i < n) {
         Ops::tail(a, b, out, n - i);
     }
+}
+
+template <class Ops>
+inline void simd_loop(const void* va, const void* vb, void* vout, std::size_t n) noexcept
+{
+    using T = typename Ops::elem;
+    constexpr std::size_t step = sizeof(T) * Ops::lanes;
+    const auto* a = static_cast<const unsigned char*>(va);
+    const auto* b = static_cast<const unsigned char*>(vb);
+    auto* out = static_cast<unsigned char*>(vout);
+
+    if constexpr (HasStreamingStore<Ops>) {
+        const auto misalignment = reinterpret_cast<std::uintptr_t>(out) % step;
+        if (n * sizeof(T) >= streaming_threshold_bytes && misalignment % sizeof(T) == 0) {
+            // Scalar prologue until `out` is vector-aligned, as streaming stores require.
+            const std::size_t head = misalignment == 0 ? 0 : (step - misalignment) / sizeof(T);
+            scalar_loop<T>(a, b, out, head);
+            const std::size_t offset = head * sizeof(T);
+            vector_loop<Ops, true>(a + offset, b + offset, out + offset, n - head);
+            return;
+        }
+    }
+    vector_loop<Ops, false>(a, b, out, n);
 }
 
 // Ops for one vector width share everything except elem/lanes/add; this fills in the scalar tail.

@@ -130,6 +130,25 @@ void check_in_place(std::mt19937_64& rng)
     }
 }
 
+// Above the library's streaming-store threshold (4 MiB of output), with an `out` that is not
+// vector-aligned (scalar prologue), a length that leaves a tail, and in-place variants.
+template <class T>
+void check_streaming(std::mt19937_64& rng)
+{
+    constexpr std::size_t n = (std::size_t{9} << 20) / sizeof(T) + 37;
+    const auto a = random_vector<T>(n, rng);
+    const auto b = random_vector<T>(n, rng);
+    for (std::size_t offset : {0u, 1u, 3u}) {
+        std::vector<T> storage(n + offset);
+        const std::span<T> out{storage.data() + offset, n};
+        simdsum::add(a, b, out);
+        ASSERT_TRUE(equal_to_reference<T>(a, b, out)) << "offset=" << offset;
+    }
+    auto in_place = a;
+    simdsum::add(in_place, b, in_place);
+    ASSERT_TRUE(equal_to_reference<T>(a, b, in_place)) << "in place";
+}
+
 template <class... Ts>
 struct TypeList {};
 
@@ -217,6 +236,11 @@ TEST_P(Kernels, EveryLengthUpTo300)
 TEST_P(Kernels, LargeArray)
 {
     for_each_type(SimdTypes{}, [this]<class T>() { check_large<T>(rng_); });
+}
+
+TEST_P(Kernels, StreamingStoresForLargeOutputs)
+{
+    for_each_type(SimdTypes{}, [this]<class T>() { check_streaming<T>(rng_); });
 }
 
 TEST_P(Kernels, MisalignedPointers)

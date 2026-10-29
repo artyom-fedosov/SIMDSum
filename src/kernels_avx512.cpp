@@ -16,6 +16,8 @@ constexpr Mask low_bits(std::size_t n) noexcept
 struct Avx512Io {
     static __m512i load(const unsigned char* p) noexcept { return _mm512_loadu_si512(p); }
     static void store(unsigned char* p, __m512i v) noexcept { _mm512_storeu_si512(p, v); }
+    static void stream(unsigned char* p, __m512i v) noexcept { _mm512_stream_si512(reinterpret_cast<__m512i*>(p), v); }
+    static void fence() noexcept { _mm_sfence(); }
 };
 
 template <class T>
@@ -63,6 +65,8 @@ struct Avx512F32 {
     static __m512 load(const unsigned char* p) noexcept { return _mm512_loadu_ps(p); }
     static void store(unsigned char* p, __m512 v) noexcept { _mm512_storeu_ps(p, v); }
     static __m512 add(__m512 x, __m512 y) noexcept { return _mm512_add_ps(x, y); }
+    static void stream(unsigned char* p, __m512 v) noexcept { _mm512_stream_ps(reinterpret_cast<float*>(p), v); }
+    static void fence() noexcept { _mm_sfence(); }
 
     static void tail(const unsigned char* a, const unsigned char* b, unsigned char* out, std::size_t n) noexcept
     {
@@ -77,6 +81,8 @@ struct Avx512F64 {
     static __m512d load(const unsigned char* p) noexcept { return _mm512_loadu_pd(p); }
     static void store(unsigned char* p, __m512d v) noexcept { _mm512_storeu_pd(p, v); }
     static __m512d add(__m512d x, __m512d y) noexcept { return _mm512_add_pd(x, y); }
+    static void stream(unsigned char* p, __m512d v) noexcept { _mm512_stream_pd(reinterpret_cast<double*>(p), v); }
+    static void fence() noexcept { _mm_sfence(); }
 
     static void tail(const unsigned char* a, const unsigned char* b, unsigned char* out, std::size_t n) noexcept
     {

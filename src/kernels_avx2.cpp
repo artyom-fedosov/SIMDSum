@@ -12,6 +12,8 @@ struct Avx2Io {
         return _mm256_loadu_si256(reinterpret_cast<const __m256i*>(p));
     }
     static void store(unsigned char* p, __m256i v) noexcept { _mm256_storeu_si256(reinterpret_cast<__m256i*>(p), v); }
+    static void stream(unsigned char* p, __m256i v) noexcept { _mm256_stream_si256(reinterpret_cast<__m256i*>(p), v); }
+    static void fence() noexcept { _mm_sfence(); }
 };
 
 template <class T>
@@ -34,12 +36,16 @@ struct Avx2F32 : ScalarTail<float, 32> {
     static __m256 load(const unsigned char* p) noexcept { return _mm256_loadu_ps(reinterpret_cast<const float*>(p)); }
     static void store(unsigned char* p, __m256 v) noexcept { _mm256_storeu_ps(reinterpret_cast<float*>(p), v); }
     static __m256 add(__m256 x, __m256 y) noexcept { return _mm256_add_ps(x, y); }
+    static void stream(unsigned char* p, __m256 v) noexcept { _mm256_stream_ps(reinterpret_cast<float*>(p), v); }
+    static void fence() noexcept { _mm_sfence(); }
 };
 
 struct Avx2F64 : ScalarTail<double, 32> {
     static __m256d load(const unsigned char* p) noexcept { return _mm256_loadu_pd(reinterpret_cast<const double*>(p)); }
     static void store(unsigned char* p, __m256d v) noexcept { _mm256_storeu_pd(reinterpret_cast<double*>(p), v); }
     static __m256d add(__m256d x, __m256d y) noexcept { return _mm256_add_pd(x, y); }
+    static void stream(unsigned char* p, __m256d v) noexcept { _mm256_stream_pd(reinterpret_cast<double*>(p), v); }
+    static void fence() noexcept { _mm_sfence(); }
 };
 
 } // namespace
